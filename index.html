@@ -8,286 +8,276 @@
 <link rel="apple-touch-icon" href="icon.png">
 <title>ブラント健康管理</  title>
 <!-- ここまでコピー -->
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ブラント健康管理アプリ</title>
+    <title>Health Tracker Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        :root { --primary: #4f46e5; --bg-light: #f8fafc; }
-        body { background-color: var(--bg-light); font-family: sans-serif; -webkit-tap-highlight-color: transparent; }
-        .card { background: white; border-radius: 1rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); margin-bottom: 1rem; padding: 1.25rem; }
-        .tab-active { border-bottom: 3px solid var(--primary); color: var(--primary); }
-        .input-pill { border: 2px solid #e2e8f0; border-radius: 0.5rem; padding: 0.5rem; width: 100%; text-align: center; }
-        .option-input { display: none; }
-        .option-label { display: block; padding: 8px; border: 2px solid #e2e880; border-radius: 0.5rem; text-align: center; font-size: 0.8rem; cursor: pointer; background: white; }
-        .option-input:checked + .option-label { background: #4f46e5; color: white; border-color: #4f46e5; }
-        .option-input:checked + .option-label.btn-bad { background: #ef4444; border-color: #ef4444; }
-        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; background-color: #e2e8f0; border-radius: 0.5rem; overflow: hidden; }
-        .calendar-day { background: white; min-height: 50px; padding: 4px; font-size: 0.75rem; text-align: center; cursor: pointer; position: relative; }
-        .calendar-header { background: #f1f5f9; font-weight: bold; padding: 6px 0; text-align: center; font-size: 0.7rem; }
-        .has-data::after { content: '●'; color: #4f46e5; display: block; font-size: 10px; line-height: 1; }
-        .today-mark { border: 2px solid #4f46e5; }
-        #loading-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.8); z-index: 1000; display: none; align-items: center; justify-content: center; flex-direction: column; }
+        .loading-spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #3b82f6;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
-<body class="pb-24">
-    <div id="loading-overlay">
-        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-        <p class="mt-4 text-indigo-600 font-bold">通信中...</p>
-    </div>
-    <header class="bg-indigo-600 text-white p-4 sticky top-0 z-50">
-        <div class="max-w-md mx-auto flex justify-between items-center">
-            <h1 class="text-xl font-bold">🐶 ブラント健康管理</h1>
-            <button onclick="fetchAllData()" class="text-xs bg-indigo-500 px-3 py-1 rounded-full">更新 🔄</button>
-        </div>
-    </header>
-    <main class="max-w-md mx-auto p-4">
-        <div class="flex mb-4 bg-white rounded-lg p-1 shadow-sm border">
-            <button onclick="switchTab('input')" id="tab-input" class="flex-1 py-2 text-center font-bold tab-active">記録入力</button>
-            <button onclick="switchTab('history')" id="tab-history" class="flex-1 py-2 text-center font-bold text-gray-500">カレンダー・統計</button>
-        </div>
-        <div id="section-input">
-            <div class="mb-4">
-                <input type="date" id="target-date" class="font-bold text-lg w-full p-2 rounded-lg border-2 border-indigo-100 outline-none">
-            </div>
-            <div class="card border-l-8 border-orange-400">
-                <h3 class="font-bold text-gray-700 mb-3">✨ コンディション</h3>
-                <div class="space-y-4">
-                    <div>
-                        <p class="text-xs text-gray-500 mb-2">食欲</p>
-                        <div class="grid grid-cols-3 gap-2">
-                            <input type="radio" name="appetite" id="ap-1" value="3" class="option-input"><label for="ap-1" class="option-label">良い</label>
-                            <input type="radio" name="appetite" id="ap-2" value="2" class="option-input"><label for="ap-2" class="option-label">普通</label>
-                            <input type="radio" name="appetite" id="ap-3" value="1" class="option-input"><label for="ap-3" class="option-label btn-bad">悪い</label>
-                        </div>
-                    </div>
-                    <div>
-                        <p class="text-xs text-gray-500 mb-2">元気</p>
-                        <div class="grid grid-cols-3 gap-2">
-                            <input type="radio" name="energy" id="en-1" value="3" class="option-input"><label for="en-1" class="option-label">良い</label>
-                            <input type="radio" name="energy" id="en-2" value="2" class="option-input"><label for="en-2" class="option-label">普通</label>
-                            <input type="radio" name="energy" id="en-3" value="1" class="option-input"><label for="en-3" class="option-label btn-bad">悪い</label>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="card">
-                <h3 class="font-bold text-gray-700 mb-3">⚖️ 体重 & 🌡️ 体温</h3>
-                <input type="number" step="0.01" id="weight" class="input-pill mb-4" placeholder="体重 (kg)">
-                <div class="grid grid-cols-4 gap-2">
-                    <input type="number" step="0.1" id="temp-morning" class="input-pill text-sm" placeholder="朝">
-                    <input type="number" step="0.1" id="temp-noon" class="input-pill text-sm" placeholder="昼">
-                    <input type="number" step="0.1" id="temp-evening" class="input-pill text-sm" placeholder="夕">
-                    <input type="number" step="0.1" id="temp-night" class="input-pill text-sm" placeholder="夜">
-                </div>
-            </div>
-            <div class="card bg-red-50 border border-red-100">
-                <h3 class="font-bold text-red-700 mb-3">💊 抗がん剤 ・ 🏥 検査</h3>
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="flex items-center gap-2 mb-1 text-sm"><input type="checkbox" id="chemo-check"> 抗がん剤</label>
-                        <input type="time" id="chemo-time" class="input-pill text-xs">
-                    </div>
-                    <div>
-                        <label class="flex items-center gap-2 mb-1 text-sm"><input type="checkbox" id="test-check"> 検査日</label>
-                        <input type="time" id="test-time" class="input-pill text-xs">
-                    </div>
-                </div>
-            </div>
-            <div class="card">
-                <h3 class="font-bold text-gray-700 mb-3">🍖 食事記録 (通常 / ささみ)</h3>
-                <div id="food-fields" class="space-y-3"></div>
-            </div>
-            <div class="card">
-                <h3 class="font-bold text-gray-700 mb-3">💩 便の状態</h3>
-                <div class="space-y-4">
-                    <div>
-                        <p class="text-xs font-bold text-indigo-500 mb-2">朝の便</p>
-                        <div id="stool-morning-options" class="grid grid-cols-2 gap-2"></div>
-                    </div>
-                    <div>
-                        <p class="text-xs font-bold text-indigo-500 mb-2">夕方の便</p>
-                        <div id="stool-evening-options" class="grid grid-cols-2 gap-2"></div>
-                    </div>
-                </div>
-            </div>
-            <div class="card">
-                <h3 class="font-bold text-gray-700 mb-2">📝 メモ</h3>
-                <textarea id="memo" class="w-full p-2 border-2 border-gray-100 rounded-lg text-sm" placeholder="メモを入力..." rows="3"></textarea>
-            </div>
-            <button onclick="saveData()" class="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl shadow-lg mb-12">保存する</button>
-        </div>
-        <div id="section-history" class="hidden">
-            <div class="card">
-                <div class="flex justify-between items-center mb-4">
-                    <button onclick="changeMonth(-1)" class="p-2">◀</button>
-                    <h3 id="cal-label" class="font-bold text-lg"></h3>
-                    <button onclick="changeMonth(1)" class="p-2">▶</button>
-                </div>
-                <div id="calendar" class="calendar-grid"></div>
-            </div>
-            <div class="card h-64">
-                <canvas id="healthChart"></canvas>
-            </div>
-            <div id="history-list" class="space-y-3"></div>
-        </div>
-    </main>
-    <div id="toast" class="fixed bottom-10 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-6 py-2 rounded-full opacity-0 transition-opacity pointer-events-none z-[2000]"></div>
-    <script>
-        // 【重要】ここに新しいデプロイ後のURLを貼り付けてください
-        const GAS_URL = "https://script.google.com/macros/s/AKfycbxjqr1-OIq9nNXTjzg__wOwy9uS5yifBF58PgfOFTWWVLb_r-HMax3gGGclD6n0UdrRcA/exec"; 
+<body class="bg-gray-50 min-h-screen pb-12">
+    <div class="max-w-md mx-auto bg-white min-h-screen shadow-lg">
+        <!-- ヘッダー -->
+        <header class="bg-blue-600 text-white p-6 rounded-b-3xl shadow-md">
+            <h1 class="text-2xl font-bold text-center">健康管理アプリ</h1>
+            <p class="text-center text-blue-100 text-sm mt-1">日々の変化を記録しましょう</p>
+        </header>
 
-        let allRecords = [];
-        let chartInstance = null;
-        let currentCalDate = new Date();
-        const times = ['morning', 'noon', 'evening', 'night'];
-        const stoolTypes = [{id:'normal',text:'普通'}, {id:'slight',text:'少し付着'}, {id:'heavy',text:'半分以上付着'}, {id:'diarrhea',text:'下痢'}];
-        function init() {
-            document.getElementById('target-date').value = new Date().toISOString().split('T')[0];
-            const foodDiv = document.getElementById('food-fields');
-            foodDiv.innerHTML = times.map(t => `
-                <div class="flex items-center gap-2">
-                    <span class="w-8 text-xs font-bold text-gray-500">${t==='morning'?'朝':t==='noon'?'昼':t==='evening'?'夕':'夜'}</span>
-                    <input type="number" id="f-q-${t}" class="input-pill text-xs py-1" placeholder="通常">
-                    <input type="number" id="f-s-${t}" class="input-pill text-xs py-1 border-orange-100" placeholder="ささみ">
-                </div>
-            `).join('');
-            ['morning', 'evening'].forEach(p => {
-                const container = document.getElementById(`stool-${p}-options`);
-                container.innerHTML = stoolTypes.map(type => `
+        <!-- メインコンテンツ -->
+        <main class="p-4 space-y-6">
+            
+            <!-- 入力フォーム -->
+            <section class="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+                <h2 class="text-lg font-semibold mb-4 text-gray-700 flex items-center">
+                    <span class="mr-2">📝</span> 今日の記録
+                </h2>
+                <div class="space-y-4">
                     <div>
-                        <input type="radio" name="stool-${p}" id="s-${p}-${type.id}" value="${type.id}" class="option-input">
-                        <label for="s-${p}-${type.id}" class="option-label">${type.text}</label>
+                        <label class="block text-sm font-medium text-gray-600 mb-1">日付</label>
+                        <input type="date" id="inputDate" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
                     </div>
-                `).join('');
-            });
-            fetchAllData();
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-600 mb-1">体重 (kg)</label>
+                            <input type="number" id="weight" step="0.1" placeholder="60.0" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-600 mb-1">摂取カロリー (kcal)</label>
+                            <input type="number" id="calories" placeholder="2000" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+                        </div>
+                    </div>
+                    <button onclick="saveData()" id="saveBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition duration-200 shadow-sm flex justify-center items-center">
+                        記録を保存する
+                    </button>
+                </div>
+            </section>
+
+            <!-- グラフセクション -->
+            <section class="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+                <h2 class="text-lg font-semibold mb-4 text-gray-700">📈 推移グラフ</h2>
+                <div class="relative h-64">
+                    <canvas id="healthChart"></canvas>
+                </div>
+            </section>
+
+            <!-- 履歴リスト -->
+            <section class="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+                <h2 class="text-lg font-semibold mb-4 text-gray-700">📅 最近の履歴</h2>
+                <div id="historyList" class="space-y-2">
+                    <p class="text-center text-gray-400 py-4">データ取得中...</p>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- メッセージボックス -->
+    <div id="toast" class="fixed bottom-10 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-full shadow-2xl hidden opacity-0 transition-opacity duration-300 z-50">
+        メッセージ
+    </div>
+
+    <script>
+        // --- 設定 ---
+        // ここをご自身のGASのウェブアプリURLに差し替えてください
+        const GAS_URL = 'https://script.google.com/macros/s/AKfycbykdOPUVJpjbTxQBX71TfZ7ewYA_SiLDjvHYxe5xPXlyJMWlaNUwJbLtqDPD8iweIHTwQ/exec'; 
+
+        let healthChart = null;
+
+        // 初期化
+        window.onload = () => {
+            // 今日の日付を初期値にセット
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('inputDate').value = today;
+            
+            fetchData();
+        };
+
+        // メッセージ表示関数
+        function showToast(message, isError = false) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.remove('hidden', 'bg-red-500', 'bg-gray-800');
+            toast.classList.add(isError ? 'bg-red-500' : 'bg-gray-800');
+            toast.style.opacity = '1';
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.classList.add('hidden'), 300);
+            }, 3000);
         }
-        async function fetchAllData() {
-            if (!GAS_URL || GAS_URL.includes("ここにURL")) return;
-            showLoading(true);
+
+        // データの取得と反映
+        async function fetchData() {
+            if (GAS_URL.includes('YOUR_GAS')) {
+                showToast("GASのURLを設定してください", true);
+                return;
+            }
+
             try {
-                const res = await fetch(GAS_URL + "?t=" + Date.now());
-                allRecords = await res.json();
-                allRecords.sort((a,b) => a.id.localeCompare(b.id));
-                updateUI();
-                showToast("✅ 同期完了");
-            } catch (e) { showToast("❌ 通信エラー"); }
-            finally { showLoading(false); }
+                const response = await fetch(GAS_URL);
+                const data = await response.json();
+                
+                if (data && data.length > 0) {
+                    updateChart(data);
+                    updateHistory(data);
+                } else {
+                    document.getElementById('historyList').innerHTML = '<p class="text-center text-gray-400 py-4">データがありません</p>';
+                }
+            } catch (error) {
+                console.error('Fetch error:', error);
+                showToast("データの取得に失敗しました", true);
+            }
         }
+
+        // データの保存
         async function saveData() {
-            if (!GAS_URL || GAS_URL.includes("ここにURL")) { showToast("⚠️ URL未設定"); return; }
-            showLoading(true);
-            const date = document.getElementById('target-date').value;
-            const data = {
-                appetite: document.querySelector('input[name="appetite"]:checked')?.value,
-                energy: document.querySelector('input[name="energy"]:checked')?.value,
-                weight: document.getElementById('weight').value,
-                temp: { morning: document.getElementById('temp-morning').value, noon: document.getElementById('temp-noon').value, evening: document.getElementById('temp-evening').value, night: document.getElementById('temp-night').value },
-                chemo: { checked: document.getElementById('chemo-check').checked, time: document.getElementById('chemo-time').value },
-                test: { checked: document.getElementById('test-check').checked, time: document.getElementById('test-time').value },
-                food: times.reduce((acc, t) => { acc[t] = { q: document.getElementById(`f-q-${t}`).value, s: document.getElementById(`f-s-${t}`).value }; return acc; }, {}),
-                stool: { morning: document.querySelector('input[name="stool-morning"]:checked')?.value, evening: document.querySelector('input[name="stool-evening"]:checked')?.value },
-                memo: document.getElementById('memo').value
-            };
+            const date = document.getElementById('inputDate').value;
+            const weight = document.getElementById('weight').value;
+            const calories = document.getElementById('calories').value;
+            const btn = document.getElementById('saveBtn');
+
+            if (!date || !weight || !calories) {
+                showToast("すべての項目を入力してください", true);
+                return;
+            }
+
+            // ボタンを無効化（二重送信防止）
+            btn.disabled = true;
+            btn.innerHTML = '<div class="loading-spinner"></div>';
+
             try {
-                await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ date, data }), mode: 'no-cors' });
-                showToast("📤 送信完了");
-                setTimeout(fetchAllData, 1500);
-            } catch (e) { showToast("❌ エラー"); }
-            finally { showLoading(false); }
-        }
-        function updateUI() {
-            loadDateData(document.getElementById('target-date').value);
-            if (!document.getElementById('section-history').classList.contains('hidden')) {
-                renderCalendar();
-                renderChart();
-                renderHistoryList();
+                // GASへのPOST送信 (実際にはno-corsの制限回避のため、URLSearchParams等を使用)
+                const params = new URLSearchParams({
+                    date: date,
+                    weight: weight,
+                    calories: calories
+                });
+
+                await fetch(`${GAS_URL}?${params.toString()}`, {
+                    method: 'POST',
+                    mode: 'no-cors' 
+                });
+
+                showToast("保存しました！");
+                
+                // 入力欄をクリア（日付以外）
+                document.getElementById('weight').value = '';
+                document.getElementById('calories').value = '';
+                
+                // 保存後に最新データを再取得してグラフを更新
+                setTimeout(fetchData, 1000); 
+
+            } catch (error) {
+                console.error('Save error:', error);
+                showToast("保存に失敗しました", true);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = "記録を保存する";
             }
         }
-        function renderCalendar() {
-            const container = document.getElementById('calendar');
-            const y = currentCalDate.getFullYear(), m = currentCalDate.getMonth();
-            document.getElementById('cal-label').innerText = `${y}年${m+1}月`;
-            container.innerHTML = ['日','月','火','水','木','金','土'].map(d => `<div class="calendar-header">${d}</div>`).join('');
-            const first = new Date(y, m, 1).getDay();
-            const last = new Date(y, m+1, 0).getDate();
-            const todayStr = new Date().toLocaleDateString('sv-SE');
-            for(let i=0; i<first; i++) container.innerHTML += '<div></div>';
-            for(let d=1; d<=last; d++) {
-                const dStr = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-                const hasData = allRecords.some(r => r.id === dStr);
-                container.innerHTML += `<div class="calendar-day ${hasData?'has-data':''} ${dStr===todayStr?'today-mark':''}" onclick="editDate('${dStr}')">${d}</div>`;
-            }
-        }
-        function renderChart() {
-            const last7 = allRecords.slice(-7);
+
+        // グラフの更新
+        function updateChart(data) {
+            // 日付順にソート（スプレッドシートの並び順に依存しないように）
+            const sortedData = [...data].sort((a, b) => new Date(a.date) - new Date(b.date));
+            
+            // 直近14日間分に絞る
+            const recentData = sortedData.slice(-14);
+
+            const labels = recentData.map(d => {
+                const dt = new Date(d.date);
+                return `${dt.getMonth() + 1}/${dt.getDate()}`;
+            });
+            const weightData = recentData.map(d => d.weight);
+            const calData = recentData.map(d => d.calories);
+
             const ctx = document.getElementById('healthChart').getContext('2d');
-            if (chartInstance) chartInstance.destroy();
-            chartInstance = new Chart(ctx, {
+            
+            if (healthChart) {
+                healthChart.destroy();
+            }
+
+            healthChart = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: last7.map(r => r.id.slice(5)),
+                    labels: labels,
                     datasets: [
-                        { label: '体重', data: last7.map(r => r.weight), borderColor: '#4f46e5', yAxisID: 'y', tension: 0.2 },
-                        { label: '食事(g)', data: last7.map(r => Object.values(r.food||{}).reduce((s,f)=>s+(parseFloat(f.q)||0)+(parseFloat(f.s)||0), 0)), type: 'bar', backgroundColor: 'rgba(251,191,36,0.3)', yAxisID: 'y1' }
+                        {
+                            label: '体重 (kg)',
+                            data: weightData,
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            yAxisID: 'yWeight',
+                            tension: 0.3,
+                            fill: true
+                        },
+                        {
+                            label: '食事 (kcal)',
+                            data: calData,
+                            borderColor: '#f59e0b',
+                            backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                            yAxisID: 'yCal',
+                            tension: 0.3,
+                            borderDash: [5, 5]
+                        }
                     ]
                 },
-                options: { responsive: true, maintainAspectRatio: false }
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    scales: {
+                        yWeight: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: { display: true, text: 'kg' }
+                        },
+                        yCal: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            grid: { drawOnChartArea: false },
+                            title: { display: true, text: 'kcal' }
+                        }
+                    }
+                }
             });
         }
-        function renderHistoryList() {
-            const list = document.getElementById('history-list');
-            list.innerHTML = [...allRecords].reverse().map(r => `
-                <div class="card border-l-4 ${r.chemo?.checked?'border-red-500':'border-indigo-400'}" onclick="editDate('${r.id}')">
-                    <div class="flex justify-between font-bold text-sm mb-1">
-                        <span>${r.id} ${r.chemo?.checked?'💊':''}</span>
-                        <span class="text-indigo-600">${r.weight||'--'}kg</span>
+
+        // 履歴リストの更新
+        function updateHistory(data) {
+            const list = document.getElementById('historyList');
+            // 逆順（新しい順）に表示
+            const displayData = [...data].reverse().slice(0, 7);
+            
+            list.innerHTML = displayData.map(d => {
+                const dt = new Date(d.date);
+                return `
+                    <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg border border-gray-100">
+                        <div class="font-medium text-gray-700">${dt.getMonth() + 1}/${dt.getDate()}</div>
+                        <div class="flex space-x-4">
+                            <span class="text-blue-600 font-bold">${d.weight} <span class="text-xs font-normal text-gray-400">kg</span></span>
+                            <span class="text-orange-500 font-bold">${d.calories} <span class="text-xs font-normal text-gray-400">kcal</span></span>
+                        </div>
                     </div>
-                </div>
-            `).join('');
+                `;
+            }).join('');
         }
-        function loadDateData(dateStr) {
-            const r = allRecords.find(rec => rec.id === dateStr);
-            document.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach(i => i.checked = false);
-            document.querySelectorAll('input[type="number"], input[type="time"], textarea').forEach(i => i.value = '');
-            if (!r) return;
-            if(r.appetite) { const el = document.getElementById(`ap-${4-r.appetite}`); if(el) el.checked = true; }
-            if(r.energy) { const el = document.getElementById(`en-${4-r.energy}`); if(el) el.checked = true; }
-            document.getElementById('weight').value = r.weight || '';
-            document.getElementById('temp-morning').value = r.temp?.morning || '';
-            document.getElementById('temp-noon').value = r.temp?.noon || '';
-            document.getElementById('temp-evening').value = r.temp?.evening || '';
-            document.getElementById('temp-night').value = r.temp?.night || '';
-            document.getElementById('chemo-check').checked = r.chemo?.checked;
-            document.getElementById('chemo-time').value = r.chemo?.time || '';
-            document.getElementById('test-check').checked = r.test?.checked;
-            document.getElementById('test-time').value = r.test?.time || '';
-            times.forEach(t => {
-                document.getElementById(`f-q-${t}`).value = r.food?.[t]?.q || '';
-                document.getElementById(`f-s-${t}`).value = r.food?.[t]?.s || '';
-            });
-            if(r.stool?.morning) { const el = document.getElementById(`s-morning-${r.stool.morning}`); if(el) el.checked = true; }
-            if(r.stool?.evening) { const el = document.getElementById(`s-evening-${r.stool.evening}`); if(el) el.checked = true; }
-            document.getElementById('memo').value = r.memo || '';
-        }
-        function editDate(d) { document.getElementById('target-date').value = d; switchTab('input'); }
-        function switchTab(t) {
-            document.getElementById('section-input').classList.toggle('hidden', t !== 'input');
-            document.getElementById('section-history').classList.toggle('hidden', t !== 'history');
-            document.getElementById('tab-input').classList.toggle('tab-active', t === 'input');
-            document.getElementById('tab-history').classList.toggle('tab-active', t === 'history');
-            if (t === 'history') updateUI(); else loadDateData(document.getElementById('target-date').value);
-        }
-        function changeMonth(n) { currentCalDate.setMonth(currentCalDate.getMonth()+n); renderCalendar(); }
-        function showLoading(s) { document.getElementById('loading-overlay').style.display = s ? 'flex' : 'none'; }
-        function showToast(m) {
-            const t = document.getElementById('toast'); t.innerText = m; t.classList.add('opacity-100');
-            setTimeout(() => t.classList.remove('opacity-100'), 2000);
-        }
-        document.getElementById('target-date').onchange = (e) => loadDateData(e.target.value);
-        window.onload = init;
     </script>
 </body>
-</html>
