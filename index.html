@@ -188,7 +188,7 @@
         }
 
         async function fetchAllData() {
-            if (!GAS_URL || GAS_URL === "ここにURLを貼り付け") return;
+            if (!GAS_URL || GAS_URL === "https://script.google.com/macros/s/AKfycbytUsgSZ9QQsKGVXRrTOgzesrS53DPpmWknn3Ac9hIds2bMJqXOlrRIIcu0SK7s4R1ckA/exec") return;
             showLoading(true);
             try {
                 const res = await fetch(GAS_URL);
@@ -200,7 +200,7 @@
         }
 
         async function saveData() {
-            if (!GAS_URL || GAS_URL === "ここにURLを貼り付け") { showToast("URL未設定です"); return; }
+            if (!GAS_URL || GAS_URL === "https://script.google.com/macros/s/AKfycbytUsgSZ9QQsKGVXRrTOgzesrS53DPpmWknn3Ac9hIds2bMJqXOlrRIIcu0SK7s4R1ckA/exec") { showToast("URL未設定です"); return; }
             showLoading(true);
             const date = document.getElementById('target-date').value;
             const data = {
