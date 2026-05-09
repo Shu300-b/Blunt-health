@@ -1,283 +1,458 @@
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-    <!-- ここからコピー -->
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-<link rel="apple-touch-icon" href="icon.png">
-<title>ブラント健康管理</  title>
-<!-- ここまでコピー -->
+import React, { useState, useEffect } from 'react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getAuth, 
+  signInAnonymously, 
+  signInWithCustomToken, 
+  onAuthStateChanged 
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  doc, 
+  setDoc, 
+  onSnapshot 
+} from 'firebase/firestore';
+import { 
+  Thermometer, 
+  Utensils, 
+  Pill, 
+  ClipboardList, 
+  Calendar as CalendarIcon, 
+  ChevronLeft, 
+  ChevronRight,
+  Save,
+  MessageSquare,
+  Droplets,
+  CheckCircle2
+} from 'lucide-react';
 
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Health Tracker Pro</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        .loading-spinner {
-            border: 4px solid rgba(0, 0, 0, 0.1);
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            border-left-color: #3b82f6;
-            animation: spin 1s linear infinite;
+/**
+ * Firebase Configuration
+ * * GitHubに公開する際は、実際の値を直接書き込まずに、
+ * .envファイルなどを使用して環境変数から読み込むことを推奨します。
+ */
+const getFirebaseConfig = () => {
+  try {
+    // 実行環境（Canvas等）からの設定読み込み
+    if (typeof __firebase_config !== 'undefined') {
+      return JSON.parse(__firebase_config);
+    }
+    // ローカル開発環境用のフォールバック設定（適宜書き換えてください）
+    return {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_AUTH_DOMAIN",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_STORAGE_BUCKET",
+      messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+      appId: "YOUR_APP_ID"
+    };
+  } catch (e) {
+    console.error("Firebase config parsing error:", e);
+    return {};
+  }
+};
+
+const firebaseConfig = getFirebaseConfig();
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// アプリケーションIDの取得
+const APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'brant-health-app';
+
+/**
+ * Brant Health Management App
+ * 愛犬「ブラント」の健康状態（体温、食事、排泄、投薬）を日次で記録するアプリケーション
+ */
+const App = () => {
+  const [user, setUser] = useState(null);
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  
+  // 初期データ構造
+  const initialData = {
+    temp: { morning: '', lunch: '', evening: '', night: '' },
+    food: {
+      morning: { amount: '', finished: false },
+      lunch: { amount: '', finished: false },
+      evening: { amount: '', finished: false },
+      night: { amount: '', finished: false }
+    },
+    excretion: {
+      urine: { morning: false, lunch: false, evening: false, night: false },
+      stool: { morning: false, evening: false },
+      stoolType: '1' // 1:普通, 2:少量付着, 3:半分付着, 4:下痢
+    },
+    medication: {
+      steroid: { morning: false, evening: false },
+      antibiotics: { checked: false, name: '' }
+    },
+    notes: ''
+  };
+
+  const [data, setData] = useState(initialData);
+
+  // 認証の初期化 (Firebase Auth)
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
         }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-    </style>
-</head>
-<body class="bg-gray-50 min-h-screen pb-12">
-    <div class="max-w-md mx-auto bg-white min-h-screen shadow-lg">
-        <!-- ヘッダー -->
-        <header class="bg-blue-600 text-white p-6 rounded-b-3xl shadow-md">
-            <h1 class="text-2xl font-bold text-center">健康管理アプリ</h1>
-            <p class="text-center text-blue-100 text-sm mt-1">日々の変化を記録しましょう</p>
-        </header>
+      } catch (error) {
+        console.error("Auth error:", error);
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
 
-        <!-- メインコンテンツ -->
-        <main class="p-4 space-y-6">
-            
-            <!-- 入力フォーム -->
-            <section class="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
-                <h2 class="text-lg font-semibold mb-4 text-gray-700 flex items-center">
-                    <span class="mr-2">📝</span> 今日の記録
-                </h2>
-                <div class="space-y-4">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-600 mb-1">日付</label>
-                        <input type="date" id="inputDate" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
-                    </div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600 mb-1">体重 (kg)</label>
-                            <input type="number" id="weight" step="0.1" placeholder="60.0" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600 mb-1">摂取カロリー (kcal)</label>
-                            <input type="number" id="calories" placeholder="2000" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
-                        </div>
-                    </div>
-                    <button onclick="saveData()" id="saveBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition duration-200 shadow-sm flex justify-center items-center">
-                        記録を保存する
-                    </button>
-                </div>
-            </section>
+  // Firestoreとの同期 (Realtime Update)
+  useEffect(() => {
+    if (!user) return;
 
-            <!-- グラフセクション -->
-            <section class="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
-                <h2 class="text-lg font-semibold mb-4 text-gray-700">📈 推移グラフ</h2>
-                <div class="relative h-64">
-                    <canvas id="healthChart"></canvas>
-                </div>
-            </section>
+    // パス構造: /artifacts/{APP_ID}/public/data/{selectedDate}
+    const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', selectedDate);
+    
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setData(docSnap.data());
+      } else {
+        setData(initialData);
+      }
+    }, (error) => {
+      console.error("Firestore sync error:", error);
+    });
 
-            <!-- 履歴リスト -->
-            <section class="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
-                <h2 class="text-lg font-semibold mb-4 text-gray-700">📅 最近の履歴</h2>
-                <div id="historyList" class="space-y-2">
-                    <p class="text-center text-gray-400 py-4">データ取得中...</p>
-                </div>
-            </section>
-        </main>
+    return () => unsubscribe();
+  }, [user, selectedDate]);
+
+  /**
+   * データをFirestoreへ保存
+   */
+  const handleSave = async () => {
+    if (!user) return;
+    setSaving(true);
+    try {
+      const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', selectedDate);
+      await setDoc(docRef, data);
+    } catch (error) {
+      console.error("Save error:", error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /**
+   * ステート更新ユーティリティ
+   */
+  const updateField = (category, field, value) => {
+    setData(prev => ({
+      ...prev,
+      [category]: { ...prev[category], [field]: value }
+    }));
+  };
+
+  const updateNestedField = (category, field, subField, value) => {
+    setData(prev => ({
+      ...prev,
+      [category]: {
+        ...prev[category],
+        [field]: { ...prev[category][field], [subField]: value }
+      }
+    }));
+  };
+
+  // 定数定義
+  const STOOL_TYPES = [
+    { id: '1', label: '普通', color: 'bg-green-500' },
+    { id: '2', label: '少しだけ地面に付着', color: 'bg-yellow-500' },
+    { id: '3', label: '半分以上地面に付着', color: 'bg-orange-500' },
+    { id: '4', label: '下痢', color: 'bg-red-500' },
+  ];
+
+  const TIME_SLOTS = [
+    { key: 'morning', label: '朝' },
+    { key: 'lunch', label: '昼' },
+    { key: 'evening', label: '夕方' },
+    { key: 'night', label: '夜' }
+  ];
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-slate-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 pb-24 font-sans text-slate-900">
+      {/* ナビゲーションバー */}
+      <header className="bg-white border-b sticky top-0 z-10 p-4 shadow-sm">
+        <div className="max-w-md mx-auto flex justify-between items-center">
+          <h1 className="text-xl font-bold text-blue-700 flex items-center gap-2">
+            <ClipboardList className="w-6 h-6" />
+            <span>健康管理</span>
+          </h1>
+          <button 
+            onClick={handleSave}
+            disabled={saving}
+            className={`flex items-center gap-2 px-5 py-2 rounded-full font-bold transition shadow-sm ${
+              saving ? 'bg-slate-200 text-slate-500' : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95'
+            }`}
+          >
+            {saving ? (
+              <span>保存中...</span>
+            ) : (
+              <span className="flex items-center gap-1"><Save size={18} />保存</span>
+            )}
+          </button>
+        </div>
+      </header>
+
+      <main className="max-w-md mx-auto p-4 space-y-6">
+        
+        {/* 日付選択セクション */}
+        <section className="bg-white p-4 rounded-2xl shadow-sm flex items-center justify-between border border-slate-100">
+          <button onClick={() => {
+            const d = new Date(selectedDate);
+            d.setDate(d.getDate() - 1);
+            setSelectedDate(d.toISOString().split('T')[0]);
+          }} className="p-2 hover:bg-slate-100 rounded-full text-slate-600 transition">
+            <ChevronLeft size={24} />
+          </button>
+          <div className="flex items-center gap-2 font-bold text-lg text-slate-700">
+            <CalendarIcon className="text-blue-500" size={20} />
+            <span>{selectedDate}</span>
+          </div>
+          <button onClick={() => {
+            const d = new Date(selectedDate);
+            d.setDate(d.getDate() + 1);
+            setSelectedDate(d.toISOString().split('T')[0]);
+          }} className="p-2 hover:bg-slate-100 rounded-full text-slate-600 transition">
+            <ChevronRight size={24} />
+          </button>
+        </section>
+
+        {/* 体温記録 */}
+        <section className="bg-white p-5 rounded-3xl shadow-sm space-y-4 border border-slate-100">
+          <h2 className="flex items-center gap-2 font-bold text-lg text-slate-800 border-b border-slate-50 pb-3">
+            <Thermometer className="text-red-500" size={20} />
+            <span>体温 (°C)</span>
+          </h2>
+          <div className="grid grid-cols-2 gap-4">
+            {TIME_SLOTS.map(slot => (
+              <div key={slot.key} className="space-y-1">
+                <label className="text-xs font-bold text-slate-400 ml-1">{slot.label}</label>
+                <input 
+                  type="number" 
+                  step="0.1"
+                  placeholder="0.0"
+                  value={data.temp[slot.key]}
+                  onChange={(e) => updateField('temp', slot.key, e.target.value)}
+                  className="w-full p-3 bg-slate-50 border border-slate-100 rounded-2xl text-center font-bold text-lg focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition"
+                />
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* 食事記録 */}
+        <section className="bg-white p-5 rounded-3xl shadow-sm space-y-4 border border-slate-100">
+          <h2 className="flex items-center gap-2 font-bold text-lg text-slate-800 border-b border-slate-50 pb-3">
+            <Utensils className="text-orange-500" size={20} />
+            <span>食事 (g)</span>
+          </h2>
+          <div className="space-y-3">
+            {TIME_SLOTS.map(slot => (
+              <div key={slot.key} className="flex items-center gap-3">
+                <span className="w-10 text-sm font-bold text-slate-500">{slot.label}</span>
+                <input 
+                  type="number" 
+                  placeholder="0"
+                  value={data.food[slot.key].amount}
+                  onChange={(e) => updateNestedField('food', slot.key, 'amount', e.target.value)}
+                  className="flex-1 p-3 bg-slate-50 border border-slate-100 rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition"
+                />
+                <button 
+                  onClick={() => updateNestedField('food', slot.key, 'finished', !data.food[slot.key].finished)}
+                  className={`px-4 py-3 rounded-2xl flex items-center justify-center gap-2 transition font-bold text-sm border ${
+                    data.food[slot.key].finished 
+                      ? 'bg-green-500 text-white border-green-600 shadow-sm' 
+                      : 'bg-slate-50 text-slate-400 border-slate-100'
+                  }`}
+                >
+                  <CheckCircle2 size={18} />
+                  <span>完食</span>
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* 排泄記録 */}
+        <section className="bg-white p-5 rounded-3xl shadow-sm space-y-5 border border-slate-100">
+          <h2 className="flex items-center gap-2 font-bold text-lg text-slate-800 border-b border-slate-50 pb-3">
+            <Droplets className="text-blue-500" size={20} />
+            <span>排泄</span>
+          </h2>
+          
+          <div className="space-y-3">
+            <div className="text-xs font-bold text-slate-400 ml-1">尿</div>
+            <div className="flex justify-between gap-2">
+              {TIME_SLOTS.map(slot => (
+                <button
+                  key={slot.key}
+                  onClick={() => updateNestedField('excretion', 'urine', slot.key, !data.excretion.urine[slot.key])}
+                  className={`flex-1 py-3 rounded-2xl text-xs font-black transition shadow-sm ${
+                    data.excretion.urine[slot.key] 
+                      ? 'bg-blue-500 text-white' 
+                      : 'bg-slate-50 text-slate-400 border border-slate-100'
+                  }`}
+                >
+                  {slot.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="text-xs font-bold text-slate-400 ml-1">便</div>
+            <div className="flex gap-2">
+              {[ {k:'morning', l:'朝'}, {k:'evening', l:'夕'} ].map(time => (
+                <button
+                  key={time.k}
+                  onClick={() => updateNestedField('excretion', 'stool', time.k, !data.excretion.stool[time.k])}
+                  className={`flex-1 py-3 rounded-2xl text-xs font-black transition shadow-sm ${
+                    data.excretion.stool[time.k] 
+                      ? 'bg-amber-700 text-white' 
+                      : 'bg-slate-50 text-slate-400 border border-slate-100'
+                  }`}
+                >
+                  {time.l}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-xs font-bold text-slate-400 ml-1">便の状態</div>
+            <div className="grid grid-cols-1 gap-2">
+              {STOOL_TYPES.map(type => (
+                <button
+                  key={type.id}
+                  onClick={() => updateField('excretion', 'stoolType', type.id)}
+                  className={`flex items-center p-3 rounded-2xl border-2 transition ${
+                    data.excretion.stoolType === type.id 
+                      ? `border-slate-800 bg-slate-800 text-white shadow-md` 
+                      : 'border-slate-50 bg-slate-50 text-slate-500'
+                  }`}
+                >
+                  <div className={`w-3 h-3 rounded-full mr-3 ${type.color}`}></div>
+                  <span className="text-sm font-bold">{type.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* 投薬管理 */}
+        <section className="bg-white p-5 rounded-3xl shadow-sm space-y-4 border border-slate-100">
+          <h2 className="flex items-center gap-2 font-bold text-lg text-slate-800 border-b border-slate-50 pb-3">
+            <Pill className="text-purple-500" size={20} />
+            <span>投薬</span>
+          </h2>
+          
+          <div className="space-y-4">
+            <div className="bg-purple-50 p-4 rounded-2xl border border-purple-100 space-y-3">
+              <div className="text-sm font-black text-purple-700 flex items-center gap-2">ステロイド</div>
+              <div className="flex gap-2">
+                {[ {k:'morning', l:'朝'}, {k:'evening', l:'晩'} ].map(time => (
+                  <button
+                    key={time.k}
+                    onClick={() => updateNestedField('medication', 'steroid', time.k, !data.medication.steroid[time.k])}
+                    className={`flex-1 py-3 rounded-xl text-sm font-black transition ${
+                      data.medication.steroid[time.k] 
+                        ? 'bg-purple-600 text-white shadow-md' 
+                        : 'bg-white text-purple-300 border border-purple-50'
+                    }`}
+                  >
+                    {time.l}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center gap-3 p-1">
+                <input 
+                  type="checkbox" 
+                  id="antibiotics"
+                  className="w-6 h-6 rounded-lg accent-purple-600 cursor-pointer"
+                  checked={data.medication.antibiotics.checked}
+                  onChange={(e) => updateNestedField('medication', 'antibiotics', 'checked', e.target.checked)}
+                />
+                <label htmlFor="antibiotics" className="text-sm font-bold text-slate-600 cursor-pointer">
+                  抗生物質 / その他
+                </label>
+              </div>
+              <input 
+                type="text" 
+                placeholder="薬の名前"
+                value={data.medication.antibiotics.name}
+                onChange={(e) => updateNestedField('medication', 'antibiotics', 'name', e.target.value)}
+                className="w-full p-3 bg-slate-50 border border-slate-100 rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition"
+              />
+            </div>
+          </div>
+        </section>
+
+        {/* メモ */}
+        <section className="bg-white p-5 rounded-3xl shadow-sm space-y-4 border border-slate-100">
+          <h2 className="flex items-center gap-2 font-bold text-lg text-slate-800 border-b border-slate-50 pb-3">
+            <MessageSquare className="text-emerald-500" size={20} />
+            <span>メモ</span>
+          </h2>
+          <textarea 
+            placeholder="様子や気になったこと..."
+            value={data.notes}
+            onChange={(e) => setData(prev => ({...prev, notes: e.target.value}))}
+            className="w-full h-32 p-4 bg-slate-50 border border-slate-100 rounded-2xl font-medium focus:ring-2 focus:ring-emerald-500 focus:bg-white outline-none resize-none transition"
+          />
+        </section>
+
+        <div className="text-center text-slate-300 text-[10px] font-bold tracking-widest uppercase py-8">
+          Brant Health Records System v1.2
+        </div>
+
+      </main>
+
+      {/* モバイル用フローティング保存ボタン */}
+      <div className="fixed bottom-6 right-6 md:hidden">
+        <button 
+          onClick={handleSave}
+          disabled={saving}
+          className={`w-16 h-16 rounded-full flex items-center justify-center shadow-2xl transition transform active:scale-90 ${
+            saving ? 'bg-slate-400 text-white cursor-wait' : 'bg-blue-600 text-white hover:bg-blue-700'
+          }`}
+        >
+          {saving ? (
+            <div className="animate-spin h-6 w-6 border-2 border-white border-t-transparent rounded-full"></div>
+          ) : (
+            <Save size={28} />
+          )}
+        </button>
+      </div>
     </div>
+  );
+};
 
-    <!-- メッセージボックス -->
-    <div id="toast" class="fixed bottom-10 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-full shadow-2xl hidden opacity-0 transition-opacity duration-300 z-50">
-        メッセージ
-    </div>
-
-    <script>
-        // --- 設定 ---
-        // ここをご自身のGASのウェブアプリURLに差し替えてください
-        const GAS_URL = 'https://script.google.com/macros/s/AKfycbykdOPUVJpjbTxQBX71TfZ7ewYA_SiLDjvHYxe5xPXlyJMWlaNUwJbLtqDPD8iweIHTwQ/exec'; 
-
-        let healthChart = null;
-
-        // 初期化
-        window.onload = () => {
-            // 今日の日付を初期値にセット
-            const today = new Date().toISOString().split('T')[0];
-            document.getElementById('inputDate').value = today;
-            
-            fetchData();
-        };
-
-        // メッセージ表示関数
-        function showToast(message, isError = false) {
-            const toast = document.getElementById('toast');
-            toast.textContent = message;
-            toast.classList.remove('hidden', 'bg-red-500', 'bg-gray-800');
-            toast.classList.add(isError ? 'bg-red-500' : 'bg-gray-800');
-            toast.style.opacity = '1';
-            setTimeout(() => {
-                toast.style.opacity = '0';
-                setTimeout(() => toast.classList.add('hidden'), 300);
-            }, 3000);
-        }
-
-        // データの取得と反映
-        async function fetchData() {
-            if (GAS_URL.includes('YOUR_GAS')) {
-                showToast("GASのURLを設定してください", true);
-                return;
-            }
-
-            try {
-                const response = await fetch(GAS_URL);
-                const data = await response.json();
-                
-                if (data && data.length > 0) {
-                    updateChart(data);
-                    updateHistory(data);
-                } else {
-                    document.getElementById('historyList').innerHTML = '<p class="text-center text-gray-400 py-4">データがありません</p>';
-                }
-            } catch (error) {
-                console.error('Fetch error:', error);
-                showToast("データの取得に失敗しました", true);
-            }
-        }
-
-        // データの保存
-        async function saveData() {
-            const date = document.getElementById('inputDate').value;
-            const weight = document.getElementById('weight').value;
-            const calories = document.getElementById('calories').value;
-            const btn = document.getElementById('saveBtn');
-
-            if (!date || !weight || !calories) {
-                showToast("すべての項目を入力してください", true);
-                return;
-            }
-
-            // ボタンを無効化（二重送信防止）
-            btn.disabled = true;
-            btn.innerHTML = '<div class="loading-spinner"></div>';
-
-            try {
-                // GASへのPOST送信 (実際にはno-corsの制限回避のため、URLSearchParams等を使用)
-                const params = new URLSearchParams({
-                    date: date,
-                    weight: weight,
-                    calories: calories
-                });
-
-                await fetch(`${GAS_URL}?${params.toString()}`, {
-                    method: 'POST',
-                    mode: 'no-cors' 
-                });
-
-                showToast("保存しました！");
-                
-                // 入力欄をクリア（日付以外）
-                document.getElementById('weight').value = '';
-                document.getElementById('calories').value = '';
-                
-                // 保存後に最新データを再取得してグラフを更新
-                setTimeout(fetchData, 1000); 
-
-            } catch (error) {
-                console.error('Save error:', error);
-                showToast("保存に失敗しました", true);
-            } finally {
-                btn.disabled = false;
-                btn.textContent = "記録を保存する";
-            }
-        }
-
-        // グラフの更新
-        function updateChart(data) {
-            // 日付順にソート（スプレッドシートの並び順に依存しないように）
-            const sortedData = [...data].sort((a, b) => new Date(a.date) - new Date(b.date));
-            
-            // 直近14日間分に絞る
-            const recentData = sortedData.slice(-14);
-
-            const labels = recentData.map(d => {
-                const dt = new Date(d.date);
-                return `${dt.getMonth() + 1}/${dt.getDate()}`;
-            });
-            const weightData = recentData.map(d => d.weight);
-            const calData = recentData.map(d => d.calories);
-
-            const ctx = document.getElementById('healthChart').getContext('2d');
-            
-            if (healthChart) {
-                healthChart.destroy();
-            }
-
-            healthChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [
-                        {
-                            label: '体重 (kg)',
-                            data: weightData,
-                            borderColor: '#3b82f6',
-                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                            yAxisID: 'yWeight',
-                            tension: 0.3,
-                            fill: true
-                        },
-                        {
-                            label: '食事 (kcal)',
-                            data: calData,
-                            borderColor: '#f59e0b',
-                            backgroundColor: 'rgba(245, 158, 11, 0.1)',
-                            yAxisID: 'yCal',
-                            tension: 0.3,
-                            borderDash: [5, 5]
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: {
-                        mode: 'index',
-                        intersect: false,
-                    },
-                    scales: {
-                        yWeight: {
-                            type: 'linear',
-                            display: true,
-                            position: 'left',
-                            title: { display: true, text: 'kg' }
-                        },
-                        yCal: {
-                            type: 'linear',
-                            display: true,
-                            position: 'right',
-                            grid: { drawOnChartArea: false },
-                            title: { display: true, text: 'kcal' }
-                        }
-                    }
-                }
-            });
-        }
-
-        // 履歴リストの更新
-        function updateHistory(data) {
-            const list = document.getElementById('historyList');
-            // 逆順（新しい順）に表示
-            const displayData = [...data].reverse().slice(0, 7);
-            
-            list.innerHTML = displayData.map(d => {
-                const dt = new Date(d.date);
-                return `
-                    <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg border border-gray-100">
-                        <div class="font-medium text-gray-700">${dt.getMonth() + 1}/${dt.getDate()}</div>
-                        <div class="flex space-x-4">
-                            <span class="text-blue-600 font-bold">${d.weight} <span class="text-xs font-normal text-gray-400">kg</span></span>
-                            <span class="text-orange-500 font-bold">${d.calories} <span class="text-xs font-normal text-gray-400">kcal</span></span>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-    </script>
-</body>
+export default App;
