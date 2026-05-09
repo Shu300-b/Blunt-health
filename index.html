@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ブラント健康管理アプリ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary: #4f46e5;
+            --bg-light: #f8fafc;
+        }
+        body {
+            background-color: var(--bg-light);
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .card {
+            background: white;
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            margin-bottom: 1rem;
+            padding: 1.25rem;
+        }
+        .btn-check { display: none; }
+        .btn-check:checked + label {
+            background-color: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+        .input-pill {
+            border: 2px solid #e2e8f0;
+            border-radius: 0.5rem;
+            padding: 0.5rem;
+            width: 100%;
+            text-align: center;
+            font-size: 1rem;
+        }
+        .poop-level-1 { border-left: 8px solid #22c55e; }
+        .poop-level-2 { border-left: 8px solid #eab308; }
+        .poop-level-3 { border-left: 8px solid #f97316; }
+        .poop-level-4 { border-left: 8px solid #ef4444; }
+        
+        .tab-active { border-bottom: 3px solid var(--primary); color: var(--primary); }
+        .chart-container { position: relative; height: 180px; width: 100%; }
+
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 1px;
+            background-color: #e2e8f0;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
+        .calendar-day {
+            background: white;
+            min-height: 80px;
+            padding: 4px;
+            display: flex;
+            flex-direction: column;
+            font-size: 0.7rem;
+            position: relative;
+        }
+        .calendar-header {
+            background: #f1f5f9;
+            font-weight: bold;
+            padding: 8px 0;
+            text-align: center;
+            font-size: 0.7rem;
+        }
+        .calendar-day.today { background: #eef2ff; }
+        .calendar-day.today span.day-num { 
+            background: var(--primary); 
+            color: white; 
+            border-radius: 50%; 
+            width: 20px; 
+            height: 20px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center;
+        }
+        .calendar-day.other-month { color: #cbd5e1; }
+        
+        .cal-event-item {
+            font-size: 0.6rem;
+            line-height: 1.2;
+            margin-top: 2px;
+            padding: 1px 3px;
+            border-radius: 3px;
+            white-space: nowrap;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            gap: 2px;
+        }
+        .bg-ev-chemo { background-color: #fee2e2; color: #991b1b; }
+        .bg-ev-test { background-color: #dbeafe; color: #1e40af; }
+        .bg-ev-hosp { background-color: #dcfce7; color: #166534; }
+
+        .time-input {
+            font-size: 0.75rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            padding: 2px;
+            width: 70px;
+        }
+    </style>
+</head>
+<body class="pb-24">
+
+    <!-- Header -->
+    <header class="bg-indigo-600 text-white p-4 sticky top-0 z-50 shadow-md">
+        <div class="max-w-md mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold">🐶 ブラント健康管理</h1>
+            <div id="user-status" class="text-xs opacity-80">接続中...</div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-md mx-auto p-4">
+        
+        <!-- Tab Navigation -->
+        <div class="flex mb-4 bg-white rounded-lg p-1 shadow-sm">
+            <button onclick="switchTab('input')" id="tab-input" class="flex-1 py-2 text-center font-bold tab-active">入力</button>
+            <button onclick="switchTab('history')" id="tab-history" class="flex-1 py-2 text-center font-bold text-gray-500">カレンダー・推移</button>
+        </div>
+
+        <!-- Input Section -->
+        <div id="section-input">
+            <div class="flex justify-between items-center mb-4">
+                <input type="date" id="target-date" class="font-bold text-lg bg-transparent border-none focus:ring-0">
+            </div>
+
+            <!-- Events -->
+            <div class="card border-2 border-indigo-200">
+                <h3 class="font-bold text-indigo-700 mb-3 flex items-center">🗓️ 予定・イベント</h3>
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between gap-2 bg-red-50 p-2 rounded-lg">
+                        <div class="flex items-center gap-2">
+                            <input type="checkbox" id="event-chemo" class="w-4 h-4 text-red-600">
+                            <label for="event-chemo" class="text-sm font-bold text-red-800">💊 抗がん剤</label>
+                        </div>
+                        <input type="time" id="event-chemo-time" class="time-input">
+                    </div>
+                    <div class="flex items-center justify-between gap-2 bg-blue-50 p-2 rounded-lg">
+                        <div class="flex items-center gap-2">
+                            <input type="checkbox" id="event-test" class="w-4 h-4 text-blue-600">
+                            <label for="event-test" class="text-sm font-bold text-blue-800">🏥 検査日</label>
+                        </div>
+                        <input type="time" id="event-test-time" class="time-input">
+                    </div>
+                    <div class="flex items-center justify-between gap-2 bg-green-50 p-2 rounded-lg">
+                        <div class="flex items-center gap-2">
+                            <input type="checkbox" id="event-hospital" class="w-4 h-4 text-green-600">
+                            <label for="event-hospital" class="text-sm font-bold text-green-800">🩺 通院日</label>
+                        </div>
+                        <input type="time" id="event-hospital-time" class="time-input">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Weight -->
+            <div class="card">
+                <h3 class="font-bold text-indigo-700 mb-3 flex items-center">⚖️ 体重記録 (kg)</h3>
+                <input type="number" step="0.01" id="weight" class="input-pill" placeholder="0.00">
+            </div>
+
+            <!-- Temperature -->
+            <div class="card">
+                <h3 class="font-bold text-indigo-700 mb-3 flex items-center">🌡️ 体温記録 (°C)</h3>
+                <div class="grid grid-cols-4 gap-2 text-[10px] text-center text-gray-400 mb-1">
+                    <div>朝</div><div>昼</div><div>夕方</div><div>夜</div>
+                </div>
+                <div class="grid grid-cols-4 gap-2">
+                    <input type="number" step="0.1" id="temp-morning" class="input-pill px-1" placeholder="0.0">
+                    <input type="number" step="0.1" id="temp-noon" class="input-pill px-1" placeholder="0.0">
+                    <input type="number" step="0.1" id="temp-evening" class="input-pill px-1" placeholder="0.0">
+                    <input type="number" step="0.1" id="temp-night" class="input-pill px-1" placeholder="0.0">
+                </div>
+            </div>
+
+            <!-- Food (Including Sasami) -->
+            <div class="card">
+                <h3 class="font-bold text-indigo-700 mb-3">🍖 食事記録 (g)</h3>
+                <div class="space-y-4" id="food-inputs-container">
+                    <!-- Dynamic generation in JS -->
+                </div>
+            </div>
+
+            <!-- Elimination -->
+            <div class="card">
+                <h3 class="font-bold text-indigo-700 mb-3 text-sm">🚽 排泄記録 (尿・便)</h3>
+                <div class="space-y-3" id="urine-inputs-container"></div>
+                <div class="grid grid-cols-2 gap-2 mt-4 mb-3">
+                    <input type="checkbox" id="stool-morning" class="btn-check"><label for="stool-morning" class="border-2 text-center py-2 rounded-lg text-sm cursor-pointer">朝の便</label>
+                    <input type="checkbox" id="stool-evening" class="btn-check"><label for="stool-evening" class="border-2 text-center py-2 rounded-lg text-sm cursor-pointer">夕の便</label>
+                </div>
+                <select id="stool-condition" class="input-pill text-left mb-2 text-sm">
+                    <option value="1">1. 普通 (緑)</option>
+                    <option value="2">2. 少し地面付着 (黄)</option>
+                    <option value="3">3. 半分以上地面付着 (橙)</option>
+                    <option value="4">4. 下痢 (赤)</option>
+                </select>
+            </div>
+
+            <!-- Medication -->
+            <div class="card">
+                <h3 class="font-bold text-indigo-700 mb-3">💊 投薬管理</h3>
+                <div class="mb-4">
+                    <p class="text-[10px] text-gray-500 mb-2">ステロイド</p>
+                    <div class="flex gap-2">
+                        <input type="checkbox" id="med-steroid-morning" class="btn-check"><label for="med-steroid-morning" class="border-2 flex-1 text-center py-2 rounded-lg text-sm cursor-pointer">朝</label>
+                        <input type="checkbox" id="med-steroid-night" class="btn-check"><label for="med-steroid-night" class="border-2 flex-1 text-center py-2 rounded-lg text-sm cursor-pointer">晩</label>
+                    </div>
+                </div>
+                <div class="flex gap-2 items-center">
+                    <input type="checkbox" id="med-other-check" class="btn-check">
+                    <label for="med-other-check" class="border-2 px-3 py-2 rounded-lg text-sm whitespace-nowrap cursor-pointer">他投薬</label>
+                    <input type="text" id="med-other-name" class="input-pill text-left text-sm" placeholder="薬名">
+                </div>
+            </div>
+
+            <!-- Memo -->
+            <div class="card">
+                <h3 class="font-bold text-indigo-700 mb-3">📝 今日のメモ</h3>
+                <textarea id="daily-memo" class="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-indigo-400 outline-none" rows="3" placeholder="気づいたことなど..."></textarea>
+            </div>
+
+            <button onclick="saveData()" id="save-btn" class="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl shadow-lg active:scale-95 transition-transform mb-10">
+                データを保存する
+            </button>
+        </div>
+
+        <!-- History Section -->
+        <div id="section-history" class="hidden">
+            <!-- Calendar -->
+            <div class="card">
+                <div class="flex justify-between items-center mb-4">
+                    <button onclick="changeMonth(-1)" class="p-2 text-indigo-600 font-bold">＜</button>
+                    <h3 id="calendar-title" class="font-bold text-lg text-indigo-900">2024年 5月</h3>
+                    <button onclick="changeMonth(1)" class="p-2 text-indigo-600 font-bold">＞</button>
+                </div>
+                <div class="calendar-grid" id="calendar-grid"></div>
+            </div>
+
+            <!-- Charts -->
+            <div class="card">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="font-bold text-indigo-700">📊 推移</h3>
+                    <select id="chart-type" onchange="updateChart()" class="text-[10px] border rounded p-1">
+                        <option value="weight">体重 (kg)</option>
+                        <option value="temp">体温 (°C)</option>
+                        <option value="food">合計食事量 (g)</option>
+                    </select>
+                </div>
+                <div class="chart-container">
+                    <canvas id="healthChart"></canvas>
+                </div>
+            </div>
+
+            <h3 class="font-bold text-gray-700 mb-3 ml-1">📋 最近の記録</h3>
+            <div id="history-list" class="space-y-4"></div>
+        </div>
+    </main>
+
+    <div id="toast" class="fixed bottom-24 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-full opacity-0 pointer-events-none transition-opacity duration-300 z-[100]">
+        保存しました！
+    </div>
+
+    <script>
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'brant-health-app';
+        const times = ['morning', 'noon', 'evening', 'night'];
+        const timeLabels = {morning:'朝', noon:'昼', evening:'夕方', night:'夜'};
+        
+        let currentUser = null;
+        let db = null;
+        let auth = null;
+        let healthChart = null;
+        let currentRecords = [];
+        let calendarDate = new Date();
+
+        const targetDateInput = document.getElementById('target-date');
+
+        function initUI() {
+            const today = new Date();
+            targetDateInput.value = today.toISOString().split('T')[0];
+
+            // Generate Food Inputs with Sasami
+            const foodContainer = document.getElementById('food-inputs-container');
+            foodContainer.innerHTML = times.map(t => `
+                <div class="bg-indigo-50 p-3 rounded-xl space-y-2 border border-indigo-100">
+                    <div class="flex items-center justify-between">
+                        <span class="text-sm font-bold text-indigo-700">${timeLabels[t]}の食事</span>
+                        <div class="flex items-center gap-1">
+                            <input type="checkbox" id="food-${t}-done" class="btn-check">
+                            <label for="food-${t}-done" class="border border-indigo-300 px-3 py-1 rounded-full text-[10px] font-bold transition-all cursor-pointer bg-white">完食</label>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="text-[9px] text-indigo-400 block mb-1 ml-1 uppercase">Food (g)</label>
+                            <input type="number" id="food-${t}-qty" class="input-pill text-sm py-2" placeholder="通常量">
+                        </div>
+                        <div>
+                            <label class="text-[9px] text-orange-500 block mb-1 ml-1 uppercase">ささみ (g)</label>
+                            <input type="number" id="food-${t}-sasami" class="input-pill text-sm py-2 border-orange-200 focus:border-orange-400" placeholder="ささみ">
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            // Generate Urine Inputs
+            const urineContainer = document.getElementById('urine-inputs-container');
+            urineContainer.innerHTML = times.map(t => `
+                <div class="flex justify-between items-center bg-gray-50 p-2 rounded-lg">
+                    <span class="text-xs font-bold text-gray-600">${timeLabels[t]}の尿</span>
+                    <div class="flex gap-1">
+                        <input type="radio" name="urine-status-${t}" id="urine-${t}-normal" value="normal" checked class="hidden">
+                        <label for="urine-${t}-normal" class="urine-label px-3 py-1 text-[10px] rounded-full border border-green-500 bg-green-500 text-white cursor-pointer" onclick="selectUrineUI('${t}', 'normal')">正常</label>
+                        <input type="radio" name="urine-status-${t}" id="urine-${t}-abnormal" value="abnormal" class="hidden">
+                        <label for="urine-${t}-abnormal" class="urine-label px-3 py-1 text-[10px] rounded-full border border-gray-200 bg-white cursor-pointer" onclick="selectUrineUI('${t}', 'abnormal')">異常</label>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function selectUrineUI(time, status) {
+            const normalLabel = document.querySelector(`label[for="urine-${time}-normal"]`);
+            const abnormalLabel = document.querySelector(`label[for="urine-${time}-abnormal"]`);
+            if(status === 'normal') {
+                normalLabel.className = "urine-label px-3 py-1 text-[10px] rounded-full border border-green-500 bg-green-500 text-white cursor-pointer";
+                abnormalLabel.className = "urine-label px-3 py-1 text-[10px] rounded-full border border-gray-200 bg-white cursor-pointer";
+            } else {
+                abnormalLabel.className = "urine-label px-3 py-1 text-[10px] rounded-full border border-red-500 bg-red-500 text-white cursor-pointer";
+                normalLabel.className = "urine-label px-3 py-1 text-[10px] rounded-full border border-gray-200 bg-white cursor-pointer";
+            }
+        }
+
+        async function initializeApp() {
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.firestore();
+            auth = firebase.auth();
+
+            auth.onAuthStateChanged(user => {
+                currentUser = user;
+                if (user) {
+                    document.getElementById('user-status').innerText = `ID: ${user.uid.substring(0, 8)}`;
+                    loadData(targetDateInput.value);
+                    loadHistoryData();
+                }
+            });
+
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await auth.signInWithCustomToken(__initial_auth_token);
+                } else {
+                    await auth.signInAnonymously();
+                }
+            } catch (err) { console.error("Auth failed:", err); }
+        }
+
+        function getCollection() {
+            return db.collection('artifacts').doc(appId).collection('public').doc('data').collection('health_records');
+        }
+
+        async function saveData() {
+            if (!currentUser || !db) return;
+            const dateStr = targetDateInput.value;
+            const saveBtn = document.getElementById('save-btn');
+            saveBtn.disabled = true;
+            saveBtn.innerText = "保存中...";
+
+            const foodData = {};
+            times.forEach(t => {
+                foodData[t] = {
+                    qty: document.getElementById(`food-${t}-qty`).value,
+                    sasami: document.getElementById(`food-${t}-sasami`).value,
+                    done: document.getElementById(`food-${t}-done`).checked
+                };
+            });
+
+            const data = {
+                events: {
+                    chemo: { check: document.getElementById('event-chemo').checked, time: document.getElementById('event-chemo-time').value },
+                    test: { check: document.getElementById('event-test').checked, time: document.getElementById('event-test-time').value },
+                    hospital: { check: document.getElementById('event-hospital').checked, time: document.getElementById('event-hospital-time').value }
+                },
+                weight: document.getElementById('weight').value,
+                temp: {
+                    morning: document.getElementById('temp-morning').value,
+                    noon: document.getElementById('temp-noon').value,
+                    evening: document.getElementById('temp-evening').value,
+                    night: document.getElementById('temp-night').value
+                },
+                food: foodData,
+                urine: {
+                    morning: document.querySelector('input[name="urine-status-morning"]:checked').value,
+                    noon: document.querySelector('input[name="urine-status-noon"]:checked').value,
+                    evening: document.querySelector('input[name="urine-status-evening"]:checked').value,
+                    night: document.querySelector('input[name="urine-status-night"]:checked').value
+                },
+                stool: {
+                    morning: document.getElementById('stool-morning').checked,
+                    evening: document.getElementById('stool-evening').checked,
+                    condition: document.getElementById('stool-condition').value
+                },
+                meds: {
+                    steroid_morning: document.getElementById('med-steroid-morning').checked,
+                    steroid_night: document.getElementById('med-steroid-night').checked,
+                    other_check: document.getElementById('med-other-check').checked,
+                    other_name: document.getElementById('med-other-name').value
+                },
+                memo: document.getElementById('daily-memo').value,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+
+            try {
+                await getCollection().doc(dateStr).set(data);
+                showToast("保存しました！");
+            } catch (e) {
+                console.error("Save error:", e);
+                showToast("保存エラーが発生しました");
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.innerText = "データを保存する";
+            }
+        }
+
+        async function loadData(dateStr) {
+            if (!currentUser || !db) return;
+            try {
+                const doc = await getCollection().doc(dateStr).get();
+                resetForm();
+                if (doc.exists) {
+                    const data = doc.data();
+                    const ev = data.events || {};
+                    document.getElementById('event-chemo').checked = ev.chemo?.check || false;
+                    document.getElementById('event-chemo-time').value = ev.chemo?.time || '';
+                    document.getElementById('event-test').checked = ev.test?.check || false;
+                    document.getElementById('event-test-time').value = ev.test?.time || '';
+                    document.getElementById('event-hospital').checked = ev.hospital?.check || false;
+                    document.getElementById('event-hospital-time').value = ev.hospital?.time || '';
+
+                    document.getElementById('weight').value = data.weight || '';
+                    document.getElementById('temp-morning').value = data.temp?.morning || '';
+                    document.getElementById('temp-noon').value = data.temp?.noon || '';
+                    document.getElementById('temp-evening').value = data.temp?.evening || '';
+                    document.getElementById('temp-night').value = data.temp?.night || '';
+                    
+                    times.forEach(t => {
+                        document.getElementById(`food-${t}-qty`).value = data.food?.[t]?.qty || '';
+                        document.getElementById(`food-${t}-sasami`).value = data.food?.[t]?.sasami || '';
+                        document.getElementById(`food-${t}-done`).checked = data.food?.[t]?.done || false;
+                        const status = data.urine?.[t] || 'normal';
+                        const rb = document.getElementById(`urine-${t}-${status}`);
+                        if(rb) rb.checked = true;
+                        selectUrineUI(t, status);
+                    });
+
+                    document.getElementById('stool-morning').checked = data.stool?.morning || false;
+                    document.getElementById('stool-evening').checked = data.stool?.evening || false;
+                    document.getElementById('stool-condition').value = data.stool?.condition || "1";
+                    document.getElementById('med-steroid-morning').checked = data.meds?.steroid_morning || false;
+                    document.getElementById('med-steroid-night').checked = data.meds?.steroid_night || false;
+                    document.getElementById('med-other-check').checked = data.meds?.other_check || false;
+                    document.getElementById('med-other-name').value = data.meds?.other_name || '';
+                    document.getElementById('daily-memo').value = data.memo || '';
+                }
+            } catch (e) { console.error("Load error:", e); }
+        }
+
+        function resetForm() {
+            document.querySelectorAll('#section-input input[type="checkbox"]').forEach(c => c.checked = false);
+            document.querySelectorAll('#section-input input[type="number"], #section-input input[type="text"], #section-input input[type="time"], #section-input textarea').forEach(i => i.value = '');
+            document.getElementById('stool-condition').value = "1";
+            times.forEach(t => {
+                const rb = document.getElementById(`urine-${t}-normal`);
+                if(rb) rb.checked = true;
+                selectUrineUI(t, 'normal');
+            });
+        }
+
+        function loadHistoryData() {
+            if (!currentUser || !db) return;
+            getCollection().onSnapshot(snapshot => {
+                const docs = [];
+                snapshot.forEach(doc => docs.push({ id: doc.id, ...doc.data() }));
+                docs.sort((a, b) => a.id.localeCompare(b.id));
+                currentRecords = docs;
+                renderHistoryList([...docs].reverse());
+                renderCalendar();
+                updateChart();
+            }, error => console.error("Snapshot error:", error));
+        }
+
+        function renderCalendar() {
+            const grid = document.getElementById('calendar-grid');
+            const title = document.getElementById('calendar-title');
+            const year = calendarDate.getFullYear();
+            const month = calendarDate.getMonth();
+            title.innerText = `${year}年 ${month + 1}月`;
+
+            const firstDay = new Date(year, month, 1).getDay();
+            const lastDate = new Date(year, month + 1, 0).getDate();
+            
+            grid.innerHTML = '';
+            ['日','月','火','水','木','金','土'].forEach(d => grid.innerHTML += `<div class="calendar-header">${d}</div>`);
+            for (let i = 0; i < firstDay; i++) grid.innerHTML += `<div class="calendar-day other-month"></div>`;
+
+            const todayStr = new Date().toISOString().split('T')[0];
+            for (let d = 1; d <= lastDate; d++) {
+                const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                const record = currentRecords.find(r => r.id === dStr);
+                let evHtml = '';
+                if (record && record.events) {
+                    const e = record.events;
+                    if (e.chemo?.check) evHtml += `<div class="cal-event-item bg-ev-chemo">💊 ${e.chemo.time || ''}</div>`;
+                    if (e.test?.check) evHtml += `<div class="cal-event-item bg-ev-test">🏥 ${e.test.time || ''}</div>`;
+                    if (e.hospital?.check) evHtml += `<div class="cal-event-item bg-ev-hosp">🩺 ${e.hospital.time || ''}</div>`;
+                }
+                grid.innerHTML += `
+                    <div class="calendar-day ${dStr === todayStr ? 'today' : ''} cursor-pointer hover:bg-indigo-50" onclick="editDate('${dStr}')">
+                        <span class="day-num font-bold mb-1">${d}</span>
+                        ${evHtml}
+                    </div>
+                `;
+            }
+        }
+
+        function changeMonth(delta) {
+            calendarDate.setMonth(calendarDate.getMonth() + delta);
+            renderCalendar();
+        }
+
+        function renderHistoryList(docs) {
+            const historyList = document.getElementById('history-list');
+            if (docs.length === 0) {
+                historyList.innerHTML = '<p class="text-center text-gray-400 py-10 text-sm">履歴がありません</p>';
+                return;
+            }
+
+            historyList.innerHTML = docs.map(record => {
+                const stoolClass = `poop-level-${record.stool?.condition || 1}`;
+                const foodTotal = times.reduce((sum, t) => sum + (parseFloat(record.food?.[t]?.qty) || 0), 0);
+                const sasamiTotal = times.reduce((sum, t) => sum + (parseFloat(record.food?.[t]?.sasami) || 0), 0);
+                
+                const evs = record.events || {};
+                const evLabels = [];
+                if(evs.chemo?.check) evLabels.push(`<span class="bg-red-100 text-red-700 px-2 rounded">💊抗がん剤 ${evs.chemo.time || ''}</span>`);
+                if(evs.test?.check) evLabels.push(`<span class="bg-blue-100 text-blue-700 px-2 rounded">🏥検査 ${evs.test.time || ''}</span>`);
+                if(evs.hospital?.check) evLabels.push(`<span class="bg-green-100 text-green-700 px-2 rounded">🩺通院 ${evs.hospital.time || ''}</span>`);
+
+                return `
+                    <div class="card ${stoolClass} border-l-8 cursor-pointer active:bg-gray-50" onclick="editDate('${record.id}')">
+                        <div class="flex justify-between items-start mb-2">
+                            <div>
+                                <span class="font-bold text-lg text-indigo-900">${record.id}</span>
+                                <div class="flex flex-wrap gap-1 mt-1 text-[10px]">${evLabels.join('')}</div>
+                            </div>
+                            <div class="text-right">
+                                <span class="text-xs font-bold bg-indigo-100 text-indigo-700 px-2 py-1 rounded">⚖️ ${record.weight || '--'} kg</span>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-[10px] mt-2">
+                            <div class="bg-blue-50 p-2 rounded-lg">
+                                <p class="text-blue-600 font-bold mb-1">🌡️ 平均体温</p>
+                                <p class="text-gray-700 font-bold">${record.temp?.morning || '-'} / ${record.temp?.noon || '-'} / ${record.temp?.evening || '-'} / ${record.temp?.night || '-'}</p>
+                            </div>
+                            <div class="bg-orange-50 p-2 rounded-lg">
+                                <p class="text-orange-600 font-bold mb-1">🍖 食事内容</p>
+                                <p class="text-gray-700">通常フード: <span class="font-bold">${foodTotal}g</span></p>
+                                <p class="text-gray-700">ささみ: <span class="font-bold">${sasamiTotal}g</span></p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function updateChart() {
+            const canvas = document.getElementById('healthChart');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const type = document.getElementById('chart-type').value;
+            const labels = currentRecords.map(r => r.id.split('-').slice(1).join('/'));
+            let datasetLabel = '', data = [], borderColor = '#4f46e5';
+
+            if (type === 'weight') {
+                datasetLabel = '体重 (kg)';
+                data = currentRecords.map(r => parseFloat(r.weight) || null);
+            } else if (type === 'temp') {
+                datasetLabel = '平均体温 (°C)';
+                data = currentRecords.map(r => {
+                    const vals = [r.temp?.morning, r.temp?.noon, r.temp?.evening, r.temp?.night].map(v => parseFloat(v)).filter(v => !isNaN(v));
+                    return vals.length ? (vals.reduce((a, b) => a + b) / vals.length).toFixed(1) : null;
+                });
+                borderColor = '#ef4444';
+            } else if (type === 'food') {
+                datasetLabel = '合計食事量 (g)';
+                data = currentRecords.map(r => {
+                    let total = 0;
+                    times.forEach(t => {
+                        total += (parseFloat(r.food?.[t]?.qty) || 0);
+                        total += (parseFloat(r.food?.[t]?.sasami) || 0);
+                    });
+                    return total;
+                });
+                borderColor = '#f59e0b';
+            }
+
+            if (healthChart) healthChart.destroy();
+            healthChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{ 
+                        label: datasetLabel, 
+                        data: data, 
+                        borderColor: borderColor, 
+                        backgroundColor: borderColor + '22',
+                        fill: true,
+                        tension: 0.3, 
+                        spanGaps: true 
+                    }]
+                },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false, 
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: false } }
+                }
+            });
+        }
+
+        function switchTab(tab) {
+            const btnInput = document.getElementById('tab-input');
+            const btnHistory = document.getElementById('tab-history');
+            const secInput = document.getElementById('section-input');
+            const secHistory = document.getElementById('section-history');
+            if (tab === 'input') {
+                btnInput.classList.add('tab-active'); btnInput.classList.remove('text-gray-500');
+                btnHistory.classList.remove('tab-active'); btnHistory.classList.add('text-gray-500');
+                secInput.classList.remove('hidden');
+                secHistory.classList.add('hidden');
+            } else {
+                btnHistory.classList.add('tab-active'); btnHistory.classList.remove('text-gray-500');
+                btnInput.classList.remove('tab-active'); btnInput.classList.add('text-gray-500');
+                secHistory.classList.remove('hidden');
+                secInput.classList.add('hidden');
+                setTimeout(() => { renderCalendar(); updateChart(); }, 100);
+            }
+        }
+
+        function editDate(dateStr) {
+            targetDateInput.value = dateStr;
+            loadData(dateStr);
+            switchTab('input');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.innerText = msg;
+            toast.style.opacity = '1';
+            setTimeout(() => { toast.style.opacity = '0'; }, 2000);
+        }
+
+        targetDateInput.addEventListener('change', (e) => {
+            if (currentUser) loadData(e.target.value);
+        });
+
+        window.onload = () => {
+            initUI();
+            initializeApp();
+        };
+    </script>
+</body>
+</html>
