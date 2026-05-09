@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <!-- ここからコピー -->
+　　<!-- ここからコピー -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
@@ -22,7 +22,7 @@
         
         /* 選択ボタン用スタイル */
         .option-input { display: none; }
-        .option-label { display: block; padding: 8px; border: 2px solid #e2e8f0; border-radius: 0.5rem; text-align: center; font-size: 0.8rem; cursor: pointer; background: white; }
+        .option-label { display: block; padding: 8px; border: 2px solid #e2e880; border-radius: 0.5rem; text-align: center; font-size: 0.8rem; cursor: pointer; background: white; }
         .option-input:checked + .option-label { background: #4f46e5; color: white; border-color: #4f46e5; }
         .option-input:checked + .option-label.btn-bad { background: #ef4444; border-color: #ef4444; }
 
@@ -56,7 +56,6 @@
             <button onclick="switchTab('history')" id="tab-history" class="flex-1 py-2 text-center font-bold text-gray-500">カレンダー・統計</button>
         </div>
 
-        <!-- 入力セクション -->
         <div id="section-input">
             <div class="mb-4">
                 <input type="date" id="target-date" class="font-bold text-lg w-full p-2 rounded-lg border-2 border-indigo-100 outline-none">
@@ -136,7 +135,6 @@
             <button onclick="saveData()" class="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl shadow-lg mb-12">保存する</button>
         </div>
 
-        <!-- 履歴・統計セクション -->
         <div id="section-history" class="hidden">
             <div class="card">
                 <div class="flex justify-between items-center mb-4">
@@ -146,11 +144,9 @@
                 </div>
                 <div id="calendar" class="calendar-grid"></div>
             </div>
-
             <div class="card h-64">
                 <canvas id="healthChart"></canvas>
             </div>
-
             <div id="history-list" class="space-y-3"></div>
         </div>
     </main>
@@ -158,7 +154,11 @@
     <div id="toast" class="fixed bottom-10 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-6 py-2 rounded-full opacity-0 transition-opacity pointer-events-none z-[2000]"></div>
 
     <script>
-        const GAS_URL = "YOUR_GAS_WEB_APP_URL_HERE";
+        /************************************************************
+         * ★重要★ 以下の "" の中に、GASで発行したURLを貼り付けてください
+         ************************************************************/
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbytUsgSZ9QQsKGVXRrTOgzesrS53DPpmWknn3Ac9hIds2bMJqXOlrRIIcu0SK7s4R1ckA/exec"; 
+
         let allRecords = [];
         let chartInstance = null;
         let currentCalDate = new Date();
@@ -167,8 +167,6 @@
 
         function init() {
             document.getElementById('target-date').value = new Date().toISOString().split('T')[0];
-            
-            // 食事
             const foodDiv = document.getElementById('food-fields');
             foodDiv.innerHTML = times.map(t => `
                 <div class="flex items-center gap-2">
@@ -177,8 +175,6 @@
                     <input type="number" id="f-s-${t}" class="input-pill text-xs py-1 border-orange-100" placeholder="ささみ">
                 </div>
             `).join('');
-
-            // 便
             ['morning', 'evening'].forEach(p => {
                 const container = document.getElementById(`stool-${p}-options`);
                 container.innerHTML = stoolTypes.map(type => `
@@ -188,12 +184,11 @@
                     </div>
                 `).join('');
             });
-
             fetchAllData();
         }
 
         async function fetchAllData() {
-            if (!GAS_URL || GAS_URL.includes("YOUR_GAS")) return;
+            if (!GAS_URL || GAS_URL === "ここにURLを貼り付け") return;
             showLoading(true);
             try {
                 const res = await fetch(GAS_URL);
@@ -205,6 +200,7 @@
         }
 
         async function saveData() {
+            if (!GAS_URL || GAS_URL === "ここにURLを貼り付け") { showToast("URL未設定です"); return; }
             showLoading(true);
             const date = document.getElementById('target-date').value;
             const data = {
@@ -261,7 +257,7 @@
                 data: {
                     labels: last7.map(r => r.id.slice(5)),
                     datasets: [
-                        { label: '体重', data: last7.map(r => r.weight), borderColor: '#4f46e5', yAxisID: 'y' },
+                        { label: '体重', data: last7.map(r => r.weight), borderColor: '#4f46e5', yAxisID: 'y', tension: 0.2 },
                         { label: '食事(g)', data: last7.map(r => Object.values(r.food||{}).reduce((s,f)=>s+(parseFloat(f.q)||0)+(parseFloat(f.s)||0), 0)), type: 'bar', backgroundColor: 'rgba(251,191,36,0.3)', yAxisID: 'y1' }
                     ]
                 },
@@ -279,7 +275,7 @@
                     </div>
                     <div class="text-[10px] text-gray-500">
                         食欲:${r.appetite==3?'良':r.appetite==2?'普':'悪'} / 元気:${r.energy==3?'良':r.energy==2?'普':'悪'} 
-                        ${r.test?.checked?' / 🏥検査あり':''}
+                        ${r.test?.checked?' / 🏥検査':''}
                     </div>
                 </div>
             `).join('');
@@ -290,8 +286,8 @@
             document.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach(i => i.checked = false);
             document.querySelectorAll('input[type="number"], input[type="time"], textarea').forEach(i => i.value = '');
             if (!r) return;
-            if(r.appetite) document.getElementById(`ap-${4-r.appetite}`).checked = true;
-            if(r.energy) document.getElementById(`en-${4-r.energy}`).checked = true;
+            if(r.appetite) { const el = document.getElementById(`ap-${4-r.appetite}`); if(el) el.checked = true; }
+            if(r.energy) { const el = document.getElementById(`en-${4-r.energy}`); if(el) el.checked = true; }
             document.getElementById('weight').value = r.weight || '';
             document.getElementById('temp-morning').value = r.temp?.morning || '';
             document.getElementById('temp-noon').value = r.temp?.noon || '';
@@ -305,8 +301,8 @@
                 document.getElementById(`f-q-${t}`).value = r.food?.[t]?.q || '';
                 document.getElementById(`f-s-${t}`).value = r.food?.[t]?.s || '';
             });
-            if(r.stool?.morning) document.getElementById(`s-morning-${r.stool.morning}`).checked = true;
-            if(r.stool?.evening) document.getElementById(`s-evening-${r.stool.evening}`).checked = true;
+            if(r.stool?.morning) { const el = document.getElementById(`s-morning-${r.stool.morning}`); if(el) el.checked = true; }
+            if(r.stool?.evening) { const el = document.getElementById(`s-evening-${r.stool.evening}`); if(el) el.checked = true; }
             document.getElementById('memo').value = r.memo || '';
         }
 
